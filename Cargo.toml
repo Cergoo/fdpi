@@ -1,0 +1,15 @@
+[package]
+name = "fdpi"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+tokio = { version = "1", features = ["full"] }
+bytes = { version = "1" }
+hickory-resolver = { version = "0.25.0-alpha.2", features = ["dns-over-https-rustls"] }
+hickory-proto = { version = "0.25.0-alpha.2" }
+webpki-roots = { version = "*" }
+rustls = "=0.23.12"
+log = { version = "*" }
+structured-logger = { version = "1" }
+
