@@ -1,15 +1,24 @@
 use bytes::BytesMut;
 use log;
 use structured_logger::{async_json::new_writer, Builder};
-use std::borrow::Borrow;
-use std::net::SocketAddr;
-use std::error::{Error};
-use std::sync::Arc;
-use tokio::io::{self, AsyncReadExt, AsyncWriteExt, copy_bidirectional_with_sizes};
-use tokio::net::{TcpListener, TcpStream};
-use tokio::sync::{mpsc, oneshot};
-use hickory_resolver::{TokioAsyncResolver};
-use hickory_resolver::config::{ResolverConfig, ResolverOpts};
+use std::{
+    borrow::Borrow,
+    net::SocketAddr,
+    error::{Error},
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+};
+use tokio::{
+    io::{self, AsyncReadExt, AsyncWriteExt, copy_bidirectional_with_sizes},
+    net::{TcpListener, TcpStream},
+    sync::{mpsc, oneshot}
+};
+use hickory_resolver::{
+    TokioAsyncResolver,
+    config::{ResolverConfig, ResolverOpts},
+};
 use hickory_proto;
 use hickory_proto::rr::rdata::a::A as dns_A;
 use webpki_roots;
@@ -32,7 +41,7 @@ type Responder = (String, oneshot::Sender<Option<hickory_proto::rr::rdata::a::A>
 
 fn error_handling(x: Result<()>) {
     if x.is_err() {
-        log::error!("err {:?}", x); 
+        log::trace!("err {:?}", x); 
     }
 }
 
@@ -47,6 +56,7 @@ async fn dns_resolver(mut rx: mpsc::Receiver<Responder>) -> Result<()> {
         resolver_config.set_tls_client_config(Arc::new(client_config));
         let mut resolver_opts = ResolverOpts::default();
         resolver_opts.cache_size = 1024;
+        resolver_opts.edns0 = true;
         let resolver = TokioAsyncResolver::tokio(resolver_config, resolver_opts);
 
         while let Some(domain) = rx.recv().await {
@@ -59,30 +69,35 @@ async fn dns_resolver(mut rx: mpsc::Receiver<Responder>) -> Result<()> {
 }
 
 async fn tcp_server(tx: mpsc::Sender<Responder>) -> Result<()> {
+    // counter
+    let num_conns: Arc<AtomicU64> = Default::default();
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = TcpListener::bind(addr).await?;
     log::info!("sever start");
 
+    
     loop {
         let (socket, _) = listener.accept().await?;
         let tx_new = tx.clone();
+        num_conns.fetch_add(1, Ordering::SeqCst);
+        let num_conns = num_conns.clone();
         tokio::spawn(async move {
             let e = process(socket, tx_new).await;
             error_handling(e);
+            num_conns.fetch_sub(1, Ordering::SeqCst);
+            log::info!("count opened sockets: {}", num_conns.load(Ordering::SeqCst));
         });
     }
 }
 
-
-
 fn main() {
-    //Builder::with_level("info")
-    //    .with_target_writer("*", new_writer(tokio::io::stdout()))
-    //    .init();
-
+    Builder::with_level("info")
+        .with_target_writer("*", new_writer(tokio::io::stdout()))
+        .init();
+    
     let rt = tokio::runtime::Runtime::new().unwrap();
     let _guard = rt.enter();
-    let (tx, rx) = mpsc::channel::<Responder>(32);
+    let (tx, rx) = mpsc::channel::<Responder>(16);
     
     rt.spawn(async{
         let e = dns_resolver(rx).await;
@@ -99,11 +114,11 @@ fn main() {
 async fn process(mut socket: TcpStream, tx: mpsc::Sender<Responder>) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(1024);
     let n = socket.read_buf(&mut buffer).await?;
-    log::info!("read {} bytes", n);
+    log::trace!("read {} bytes", n);
     
     if n == 0 { 
         if !buffer.is_empty() {
-            log::info!("connection reset by peer");
+            log::trace!("connection reset by peer");
         }
         return Ok(());
     }
@@ -119,7 +134,7 @@ async fn process(mut socket: TcpStream, tx: mpsc::Sender<Responder>) -> Result<(
     let ip: dns_A = resp_rx.await?.ok_or("not resolve dns to ip").map_err(|e| { log::error!("{}", e); e})? ;
     
     if ip.is_loopback() {     
-        log::info!("loopback connection close");
+        log::trace!("loopback connection close");
         return Ok(()); 
     }
 
@@ -127,17 +142,15 @@ async fn process(mut socket: TcpStream, tx: mpsc::Sender<Responder>) -> Result<(
     socket.write_all(&[addr.method,CONN_ESTABL].concat()).await?;
     split_hello_phrase(&mut socket, &mut server_con).await?;
     copy_bidirectional_with_sizes(&mut server_con, &mut socket, 128, 128).await?;
-    log::info!("socket close: {:?}", server_con.peer_addr());
+    log::info!("socket close: {}", addr.domain);
     
     Ok(())
 }
 
 fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
-
-        log::info!("http head: {:?}", input);
-
         let mut r: HttpHead = Default::default();
         let first_string = input.split(|x| *x==b'\r').next().ok_or("err")?;
+        log::info!("http head: {:?}", std::str::from_utf8(first_string)?);
         let mut it = first_string.split(|x| *x==b' ');
         r.command = it.next().ok_or("err")?;
         r.domain = std::str::from_utf8(it.next().ok_or("err")?)?;
@@ -151,7 +164,7 @@ fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
 async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream) -> Result<()>{
     let mut hello_buf = [0; 16];
     let _ = reader.read(&mut hello_buf).await?;
-    log::info!("[hello] {:?}", &hello_buf);
+    log::trace!("[hello] {:?}", std::str::from_utf8(&hello_buf)?);
     writer.set_nodelay(true)?;
     writer.write(&hello_buf[0..1]).await?;
     writer.write(&hello_buf[1..]).await?;
