@@ -1,7 +1,8 @@
 [package]
 name = "fdpi"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2021"
+description = "fuck dpi http proxy"
 
 [dependencies]
 tokio = { version = "1", features = ["full"] }
@@ -12,4 +13,5 @@ webpki-roots = { version = "*" }
 rustls = "=0.23.12"
 log = { version = "*" }
 structured-logger = { version = "1" }
+clap = { version = "4.5.16", features = ["derive"] }
 
