@@ -1,13 +1,13 @@
 # fdpi
 fuck dpi, http proxy
 
-# install
+## install
 ```
 git cone https://github.com/Cergoo/fdpi.git
 cargo build --release
 ```
 
-# run
+## run
 ```
 ./fdpi
 google-chrome --proxy-server="http://127.0.0.1:8080"
@@ -15,5 +15,5 @@ google-chrome --proxy-server="http://127.0.0.1:8080"
 ```
 see youtube
 
-# Inspirations
+## Inspirations
 [SpoofDPI](https://github.com/xvzc/SpoofDPI)
