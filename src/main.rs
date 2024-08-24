@@ -3,7 +3,7 @@ use log;
 use structured_logger::{async_json::new_writer, Builder};
 use std::{
     borrow::Borrow,
-    net::{SocketAddr, IpAddr, AddrParseError},
+    net::SocketAddr,
     error::{Error},
     sync::{
         Arc,
@@ -11,7 +11,7 @@ use std::{
     },
 };
 use tokio::{
-    io::{AsyncReadExt, AsyncWriteExt, copy_bidirectional_with_sizes},
+    io::{self, AsyncReadExt, AsyncWriteExt, copy_bidirectional_with_sizes},
     net::{TcpListener, TcpStream},
     sync::{mpsc, oneshot}
 };
@@ -23,32 +23,10 @@ use hickory_proto;
 use hickory_proto::rr::rdata::a::A as dns_A;
 use webpki_roots;
 use rustls::ClientConfig;
-use clap::Parser;
 
 //mod util;
 
-#[derive(Parser)]
-#[command(name = "fdpi")]
-#[command(version, about, long_about = None)]
-struct Cli {
-    /// Listen address
-    #[arg(short, long, default_value_t = [127,0,0,1].into(), value_parser =  str_to_ip)]
-    addr: IpAddr,
-    /// Network port to use
-    #[arg(short, long, default_value_t = 8080, value_parser = clap::value_parser!(u16).range(1..))]
-    port: u16,
-    /// Log mode disable
-    #[arg(short, long, default_value_t = false,)]
-    nolog: bool,
-}
-
-fn str_to_ip(i: &str) -> std::result::Result<IpAddr, AddrParseError> {
-    i.parse()
-}
-
-
 const CONN_ESTABL: &[u8; 31] = b" 200 Connection Established\r\n\r\n";
-//const CONN_CLOSE: &[u8; 46] = b"HTTP/1.1 204 No Content\r\nConnection: close\r\n\r\n";
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 #[derive(Debug, Default)]
@@ -96,16 +74,16 @@ async fn tcp_server(tx: mpsc::Sender<Responder>) -> Result<()> {
     let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = TcpListener::bind(addr).await?;
     log::info!("sever start");
+
     
     loop {
-        let (mut socket, _) = listener.accept().await?;
+        let (socket, _) = listener.accept().await?;
         let tx_new = tx.clone();
         num_conns.fetch_add(1, Ordering::SeqCst);
         let num_conns = num_conns.clone();
         tokio::spawn(async move {
-            let e = process(&mut socket, tx_new).await;
+            let e = process(socket, tx_new).await;
             error_handling(e);
-            let _ = socket.shutdown().await;
             num_conns.fetch_sub(1, Ordering::SeqCst);
             log::info!("count opened sockets: {}", num_conns.load(Ordering::SeqCst));
         });
@@ -113,8 +91,6 @@ async fn tcp_server(tx: mpsc::Sender<Responder>) -> Result<()> {
 }
 
 fn main() {
-    let _cli = Cli::parse();
-
     Builder::with_level("info")
         .with_target_writer("*", new_writer(tokio::io::stdout()))
         .init();
@@ -135,7 +111,7 @@ fn main() {
     });
 }
 
-async fn process(mut socket: &mut TcpStream, tx: mpsc::Sender<Responder>) -> Result<()> {
+async fn process(mut socket: TcpStream, tx: mpsc::Sender<Responder>) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(1024);
     let n = socket.read_buf(&mut buffer).await?;
     log::trace!("read {} bytes", n);
@@ -147,7 +123,12 @@ async fn process(mut socket: &mut TcpStream, tx: mpsc::Sender<Responder>) -> Res
         return Ok(());
     }
     
-    let addr = parse_http_head(buffer.borrow()).map_err(|e| { log::info!("error parse http head {}", e); e })?;
+    let addr = parse_http_head(buffer.borrow()).map_err(|e| { log::info!("error parse http head {}", e); e})?;
+    if addr.command != b"CONNECT" {
+        log::error!("http command {}", std::str::from_utf8(addr.command)?); 
+        return Ok(()); 
+    }
+    
     let (resp_tx, resp_rx) = oneshot::channel::<Option<dns_A>>();
     tx.send((addr.domain.to_string(), resp_tx)).await?;
     let ip: dns_A = resp_rx.await?.ok_or("not resolve dns to ip").map_err(|e| { log::error!("{}", e); e})? ;
@@ -172,7 +153,6 @@ fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
         log::info!("http head: {:?}", std::str::from_utf8(first_string)?);
         let mut it = first_string.split(|x| *x==b' ');
         r.command = it.next().ok_or("err")?;
-        if r.command!= b"CONNECT" { return Err("err command".into()); }
         r.domain = std::str::from_utf8(it.next().ok_or("err")?)?;
         let addr_port = r.domain.split_once(':').unwrap_or((r.domain,"443"));
         (r.domain, r.port) = (addr_port.0, addr_port.1.parse::<u16>()?);
