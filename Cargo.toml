@@ -11,7 +11,7 @@ hickory-resolver = { version = "0.25.0-alpha.2", features = ["dns-over-https-rus
 hickory-proto = { version = "0.25.0-alpha.2" }
 webpki-roots = { version = "*" }
 rustls = "=0.23.12"
-log = { version = "*" }
+log = { version = "*", features = ["max_level_info", "release_max_level_info"] }
 structured-logger = { version = "1" }
 clap = { version = "4.5.16", features = ["derive"] }
 

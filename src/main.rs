@@ -90,10 +90,9 @@ async fn dns_resolver(mut rx: mpsc::Receiver<Responder>) -> Result<()> {
         Ok(())
 }
 
-async fn tcp_server(tx: mpsc::Sender<Responder>) -> Result<()> {
+async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr) -> Result<()> {
     // counter
     let num_conns: Arc<AtomicU64> = Default::default();
-    let addr = SocketAddr::from(([127, 0, 0, 1], 8080));
     let listener = TcpListener::bind(addr).await?;
     log::info!("sever start");
     
@@ -113,15 +112,17 @@ async fn tcp_server(tx: mpsc::Sender<Responder>) -> Result<()> {
 }
 
 fn main() {
-    let _cli = Cli::parse();
+    let cli = Cli::parse();
 
-    Builder::with_level("info")
+    let log_level = if cli.nolog { "off" } else { "info" };
+    Builder::with_level(log_level)
         .with_target_writer("*", new_writer(tokio::io::stdout()))
         .init();
     
     let rt = tokio::runtime::Runtime::new().unwrap();
     let _guard = rt.enter();
     let (tx, rx) = mpsc::channel::<Responder>(16);
+    let addr = SocketAddr::from((cli.addr, cli.port));
     
     rt.spawn(async{
         let e = dns_resolver(rx).await;
@@ -130,7 +131,7 @@ fn main() {
     });
     
     rt.block_on(async{ 
-        let e = tcp_server(tx).await;
+        let e = tcp_server(tx, addr).await;
         error_handling(e); 
     });
 }
