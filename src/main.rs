@@ -1,6 +1,5 @@
 use bytes::BytesMut;
 use log;
-//use structured_logger::{async_json::new_writer, Builder};
 use std::{
     borrow::Borrow,
     net::{SocketAddr, IpAddr, AddrParseError},
@@ -48,15 +47,10 @@ struct Cli {
     #[arg(short, long, value_parser = clap::value_parser!(u8).range(0..64))]
     disorder: Vec<u8>,
 }
-
-
-fn str_to_ip(i: &str) -> std::result::Result<IpAddr, AddrParseError> {
-    i.parse()
-}
-
+fn str_to_ip(i: &str) -> std::result::Result<IpAddr, AddrParseError> { i.parse() }
 
 const CONN_ESTABL: &[u8; 31] = b" 200 Connection Established\r\n\r\n";
-const CONN_CLOSE: &[u8; 38]  = b"HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";
+const CONN_CLOSE: &[u8; 39]  = b" HTTP/1.1 200 OK\r\nConnection: close\r\n\r\n";
 
 type Result<T> = std::result::Result<T, Box<dyn Error>>;
 
@@ -70,68 +64,56 @@ struct HttpHead<'a> {
 
 type Responder = (String, oneshot::Sender<Option<hickory_proto::rr::rdata::a::A>>);
 
-#[derive(Debug, Clone, Copy)]
+#[derive(PartialEq, Debug, Ord, PartialOrd, Eq, Copy, Clone)]
 enum FdpiMethod {
-    Split(u8),
-    Disorder(u8),
+    Split,
+    Disorder,
+}
+#[derive(Debug, Clone, Copy)]
+struct FdpiItem {
+    i: u8,
+    c: FdpiMethod,
 }
 
-/*
-impl std::ops::Sub for FdpiMethod {
-    type Output = Self;
-    fn sub(self, other: Self) -> Self::Output {
-        let (x1, x2) = (unboxing(*self), unboxing(*other))
-        let r:u8 =
-        math self {
-            FdpiMethod::Split(x) => x - unboxing(other)
-        } 
+impl PartialEq for FdpiItem{
+    fn eq(&self, other: &Self) -> bool {         
+        self.i==other.i
     }
 }
-*/
+impl Eq for FdpiItem {}
 
-
-
-fn unboxing(i: FdpiMethod) -> u8 {
-     match i  { FdpiMethod::Split(x) | FdpiMethod::Disorder(x) => x }
-}
-
-impl PartialEq for FdpiMethod {
-    fn eq(&self, other: &Self) -> bool {
-        let (x1, x2) = (unboxing(*self), unboxing(*other));
-        x1==x2
+impl Ord for FdpiItem {
+    fn cmp(&self, other: &Self) -> std::cmp::Ordering {   
+        self.i.cmp(&other.i)
     }
 }
-impl Eq for FdpiMethod {}
-
-impl Ord for FdpiMethod {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        let (x1, x2) = (unboxing(*self), unboxing(*other));
-        x1.cmp(&x2)
-    }
-}
-impl PartialOrd for FdpiMethod {
+impl PartialOrd for FdpiItem {
     fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
         Some(self.cmp(other))
     }
 }
+impl std::ops::Sub for FdpiItem {
+    type Output = Self;
+    fn sub(mut self, other: Self) -> Self::Output {
+        self.i = self.i.checked_sub(other.i).unwrap_or(0);
+        self
+    }
+}
 
-fn prepar_fdpi_command(split: &[u8], disorder: &[u8]) -> Vec<FdpiMethod>{
+fn prepar_fdpi_command(split: &[u8], disorder: &[u8]) -> Vec<FdpiItem>{
     let len = std::cmp::max(split.len(), disorder.len());
-    let mut v = Vec::<FdpiMethod>::with_capacity(len+1); 
+    let mut v = Vec::<FdpiItem>::with_capacity(len+1); 
 
     split.iter().copied().for_each(|x| { 
-            let x = FdpiMethod::Split(x);
-            if !v.contains(&x) { v.push(x); };
+            let i = FdpiItem{i:x, c:FdpiMethod::Split};
+            if !v.contains(&i) { v.push(i); };
             });  
 
     disorder.iter().copied().for_each(|x| { 
-            let x = FdpiMethod::Disorder(x);
-            if !v.contains(&x) { v.push(x); };
+            let i = FdpiItem{i:x, c:FdpiMethod::Disorder};
+            if !v.contains(&i) { v.push(i); };
             });
     v.sort();
-
-    let mut l = 0;
-    //v.iter().copied().for_each(move|x| { (x, l) = (x-l, x); x}).collect()
     v 
 }
 
@@ -149,7 +131,6 @@ async fn dns_resolver(mut rx: mpsc::Receiver<Responder>) -> Result<()> {
             .with_no_client_auth();
 
         let mut resolver_config = ResolverConfig::cloudflare_https();
-        //resolver_config.set_tls_client_config(Arc::new(client_config));
         resolver_config.set_tls_client_config(Arc::new(client_config));
         let mut resolver_opts = ResolverOpts::default();
         resolver_opts.cache_size = 1024;
@@ -157,15 +138,20 @@ async fn dns_resolver(mut rx: mpsc::Receiver<Responder>) -> Result<()> {
         let resolver = TokioAsyncResolver::tokio(resolver_config, resolver_opts);
 
         while let Some(domain) = rx.recv().await {
-            let response = resolver.ipv4_lookup(domain.0).await?;
-            let ip = response.iter().next();
-            let _ = domain.1.send(ip.copied());
-        }
+            let ip: Option<dns_A>;
+            let (dname, tx) = domain;  
+            let response = resolver.ipv4_lookup(dname)
+                            .await.map_err(|e| {log::error!("dns resolver: {}", e); e})
+                            .ok();
+            if response.is_none() { ip = None; } else { ip = response.unwrap().iter().next().copied(); }
+
+            let _ = tx.send(ip);
+        } 
 
         Ok(())
 }
 
-async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr, fdpi_methods: Vec<FdpiMethod>) -> Result<()> {
+async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr, fdpi_methods: Vec<FdpiItem>) -> Result<()> {
     // counter
     let num_conns: Arc<AtomicU64> = Default::default();
     let listener = TcpListener::bind(addr).await?;
@@ -191,27 +177,11 @@ async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr, fdpi_methods:
 fn main() {
     let cli = Cli::parse();
     let fdm = prepar_fdpi_command(&cli.split, &cli.disorder); 
-    let log_level = if cli.nolog { "off" } else { "DEBUG" };
+    let log_level = if cli.nolog { "off" } else { "trace" };
 
     println!("{:?}", fdm);
-
-    log::set_max_level(log::LevelFilter::Trace);
-    
-    //Builder::with_level("5")
-    //    .with_target_writer("*", new_writer(tokio::io::stdout()))
-    //    .init();
     
     pretty_env_logger::init();
-    log::error!("error");
-    log::warn!("warn");
-    log::info!("info");
-    log::debug!("debug");
-    log::trace!("trace");
-    log::info!("such information");
-    log::warn!("o_O");
-    log::error!("much error");
-    log::trace!("much error1");
-
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let _guard = rt.enter();
@@ -230,7 +200,7 @@ fn main() {
     });
 }
 
-async fn process(mut socket: &mut TcpStream, tx: mpsc::Sender<Responder>, fdpi_methods: Vec<FdpiMethod>) -> Result<()> {
+async fn process(mut socket: &mut TcpStream, tx: mpsc::Sender<Responder>, fdpi_methods: Vec<FdpiItem>) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(1024);
     let n = socket.read_buf(&mut buffer).await?;
     log::trace!("read {} bytes", n);
@@ -256,7 +226,7 @@ async fn process(mut socket: &mut TcpStream, tx: mpsc::Sender<Responder>, fdpi_m
 
     log::trace!("create tunnel");
     socket.write_all(&[addr.method,CONN_ESTABL].concat()).await?;
-    //split_hello_phrase(&mut socket, &mut server_con, fdpi_methods).await?;
+    split_hello_phrase(&mut socket, &mut server_con, fdpi_methods).await?;
     copy_bidirectional_with_sizes(&mut server_con, &mut socket, 128, 128).await?;
     log::info!("socket close: {}", addr.domain);
     
@@ -266,7 +236,7 @@ async fn process(mut socket: &mut TcpStream, tx: mpsc::Sender<Responder>, fdpi_m
 fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
         let mut r: HttpHead = Default::default();
         let first_string = input.split(|x| *x==b'\r').next().ok_or("err")?;
-        log::trace!("http head: {:?}", std::str::from_utf8(first_string)?);
+        log::info!("http head: {:?}", std::str::from_utf8(first_string)?);
         let mut it = first_string.split(|x| *x==b' ');
         r.command = it.next().ok_or("err")?;
         if r.command!= b"CONNECT" { return Err("err command".into()); }
@@ -275,13 +245,14 @@ fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
         (r.domain, r.port) = (addr_port.0, addr_port.1.parse::<u16>()?);
         r.method = it.next().ok_or("err")?;
 
+        log::trace!("end_http head: {:?}", r);
         Ok(r)
 }  
 
-async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: Vec<FdpiMethod>) -> Result<()>{
+async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: Vec<FdpiItem>) -> Result<()>{
     let mut hello_buf = [0; 64];
     let _ = reader.read(&mut hello_buf).await?;
-    log::trace!("[hello] {:?}", std::str::from_utf8(&hello_buf)?);
+    //log::trace!("[hello] {:?}", std::str::from_utf8(&hello_buf)?);
     writer.set_nodelay(true)?;
     for i in fdpi_methods {
 
