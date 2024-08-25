@@ -1,6 +1,9 @@
 # fdpi
 fuck dpi, http proxy
 
+# attention
+the project is not finished, we are waiting for the hickory-resolver release 25
+
 ## install
 ```
 git cone https://github.com/Cergoo/fdpi.git
