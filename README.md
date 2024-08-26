@@ -19,5 +19,4 @@ google-chrome --proxy-server="http://127.0.0.1:8080"
 or -s2 -d5 -d8 -t3
 see youtube
 
-###
-ok, release, everything works for me.
+### ok, release, everything works for me.
