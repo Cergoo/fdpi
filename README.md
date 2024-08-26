@@ -5,6 +5,10 @@ fuck dpi, http proxy
 ```
 git cone https://github.com/Cergoo/fdpi.git
 cargo build --release
+
+or
+
+download release bin file 
 ```
 
 ## run
