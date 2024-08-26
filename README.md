@@ -8,8 +8,12 @@ cargo build --release
 ```
 
 ## run
+for: 
+youtube.com, 
+rutracker.org,
+index.minfin.com.ua/russian-invading/casualties
 ```
-./fdpi -d2 -d4 -d7      // - for youtube.com, rutracker.org, https://index.minfin.com.ua/russian-invading/casualties/ 
+./fdpi -d2 -d4 -d7        
 google-chrome --proxy-server="http://127.0.0.1:8080"
 ```
 see youtube
