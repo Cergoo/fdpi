@@ -2,7 +2,7 @@
 fuck dpi, http proxy
 
 - split and -disorder methods
-- caching (1000 entries) DNS resolver enabled: doh Cloudflare
+- caching (1000 entries) DNS resolver enabled: DoH Cloudflare
 - log support
 
 ## install
