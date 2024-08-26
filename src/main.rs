@@ -27,7 +27,7 @@ use pretty_env_logger;
 
 //mod util;
 
-#[derive(Parser)]
+#[derive(Parser, Debug)]
 #[command(name = "fdpi")]
 #[command(version, about, long_about = None)]
 struct Cli {
@@ -41,10 +41,10 @@ struct Cli {
     #[arg(short, long, default_value_t = false,)]
     nolog: bool,
     /// fuckdpi split pos [example: -s1 -s4] range 0..64
-    #[arg(short, long, value_parser = clap::value_parser!(u8).range(0..64))]
+    #[arg(short, long, value_parser = clap::value_parser!(u8).range(1..64))]
     split: Vec<u8>,
     /// fuckdpi disorder pos [example: -d9 -d14] range 0..64
-    #[arg(short, long, value_parser = clap::value_parser!(u8).range(0..64))]
+    #[arg(short, long, value_parser = clap::value_parser!(u8).range(1..64))]
     disorder: Vec<u8>,
 }
 fn str_to_ip(i: &str) -> std::result::Result<IpAddr, AddrParseError> { i.parse() }
@@ -64,12 +64,12 @@ struct HttpHead<'a> {
 
 type Responder = (String, oneshot::Sender<Option<hickory_proto::rr::rdata::a::A>>);
 
-#[derive(PartialEq, Debug, Ord, PartialOrd, Eq, Copy, Clone)]
+#[derive(PartialEq, Debug, Ord, PartialOrd, Eq, Copy, Clone, Default)]
 enum FdpiMethod {
-    Split,
+    #[default] Split,
     Disorder,
 }
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
 struct FdpiItem {
     i: u8,
     c: FdpiMethod,
@@ -103,6 +103,7 @@ impl std::ops::Sub for FdpiItem {
 fn prepar_fdpi_command(split: &[u8], disorder: &[u8]) -> Vec<FdpiItem>{
     let len = std::cmp::max(split.len(), disorder.len());
     let mut v = Vec::<FdpiItem>::with_capacity(len+1); 
+    if len == 0 { return v };
 
     split.iter().copied().for_each(|x| { 
             let i = FdpiItem{i:x, c:FdpiMethod::Split};
@@ -114,6 +115,14 @@ fn prepar_fdpi_command(split: &[u8], disorder: &[u8]) -> Vec<FdpiItem>{
             if !v.contains(&i) { v.push(i); };
             });
     v.sort();
+
+    let mut n0 = v[0];
+    use std::cell::Cell;
+    Cell::from_mut(v.as_mut_slice()).as_slice_of_cells().windows(2).into_iter().for_each(|x|{
+            let mut t1 = Cell::get(&x[1]);
+            (t1, n0) = (t1 - n0, t1);
+            Cell::set(&x[1], t1);
+        });
     v 
 }
 
@@ -155,7 +164,7 @@ async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr, fdpi_methods:
     // counter
     let num_conns: Arc<AtomicU64> = Default::default();
     let listener = TcpListener::bind(addr).await?;
-    log::trace!("sever start");
+    log::info!("sever start");
     
     loop {
         let (mut socket, _) = listener.accept().await?;
@@ -176,12 +185,13 @@ async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr, fdpi_methods:
 
 fn main() {
     let cli = Cli::parse();
-    let fdm = prepar_fdpi_command(&cli.split, &cli.disorder); 
-    let log_level = if cli.nolog { "off" } else { "trace" };
-
-    println!("{:?}", fdm);
-    
+    let log_level = if cli.nolog { "off" } else { "info" };
+    if std::env::var("RUST_LOG").is_err() { std::env::set_var("RUST_LOG", log_level) }
     pretty_env_logger::init();
+    println!("{:} --help", clap::crate_name!());
+
+    let fdm = prepar_fdpi_command(&cli.split, &cli.disorder); 
+    log::trace!("read fdm: {:#?}", fdm);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
     let _guard = rt.enter();
@@ -252,14 +262,25 @@ fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
 async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: Vec<FdpiItem>) -> Result<()>{
     let mut hello_buf = [0; 64];
     let _ = reader.read(&mut hello_buf).await?;
+    let mut buf = hello_buf.as_slice();
     //log::trace!("[hello] {:?}", std::str::from_utf8(&hello_buf)?);
+    let ttl = reader.ttl()?;
     writer.set_nodelay(true)?;
     for i in fdpi_methods {
-
+        match i.c {
+            FdpiMethod::Split => {
+                writer.write(&buf[..i.i as usize]).await?;
+                buf = &buf[i.i as usize ..]; 
+            },
+            FdpiMethod::Disorder => {
+                reader.set_ttl(1)?;
+                writer.write(&buf[..i.i as usize]).await?;
+                reader.set_ttl(ttl)?;
+                buf = &buf[i.i as usize ..]; 
+            },
+        };
     } 
-
-    writer.write(&hello_buf[0..1]).await?;
-    writer.write(&hello_buf[1..]).await?;
+    writer.write(buf).await?;
     writer.set_nodelay(false)?;
 
     Ok(())
@@ -267,7 +288,6 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
 
 
 /*
-
 fn multi_split<T>(idx: &[u64], v: &[T]) -> Vec<&[T]> {
     let v = Vec::with_capacity(idx.len()+1);
     for i in idx {
