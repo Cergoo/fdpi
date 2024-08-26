@@ -1,6 +1,10 @@
 # fdpi
 fuck dpi, http proxy
 
+- split and -disorder methods
+- caching (1000 entries) DNS resolver enabled: doh Cloudflare
+- log support
+
 ## install
 ```
 git cone https://github.com/Cergoo/fdpi.git
