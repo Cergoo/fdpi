@@ -23,4 +23,4 @@ see youtube
 ### ok, release, everything works for me.
 
 
-<img src="img1.jpg" width="100">
+<img src="img1.jpg" width="200">
