@@ -23,4 +23,4 @@ see youtube
 ### ok, release, everything works for me.
 
 
-![img](img1.jpg "img")
+![img](img1.jpg "img" | width=100)
