@@ -263,7 +263,7 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
     let mut hello_buf = [0; 64];
     let _ = reader.read(&mut hello_buf).await?;
     let mut buf = hello_buf.as_slice();
-    //log::trace!("[hello] {:?}", std::str::from_utf8(&hello_buf)?);
+    log::info!("[hello] {:?}", &hello_buf);
     let ttl = reader.ttl()?;
     writer.set_nodelay(true)?;
     for i in fdpi_methods {
