@@ -40,13 +40,12 @@ struct Cli {
     /// Log mode disable
     #[arg(short, long, default_value_t = false,)]
     nolog: bool,
-    /// fuckdpi split pos [example: -s1 -s4] range 1..64
+    /// fuckdpi split pos [example: -s1 -s4] range 0..64
     #[arg(short, long, value_parser = clap::value_parser!(u8).range(1..64))]
     split: Vec<u8>,
-    /// fuckdpi disorder pos [example: -d1 -d4] range 1..64
+    /// ttl for disorder
     #[arg(short, long, value_parser = clap::value_parser!(u8).range(1..64))]
     disorder: Vec<u8>,
-    /// ttl for disorder range 1..64
     #[arg(short, long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..))]
     ttl: u8,
 }
@@ -163,7 +162,7 @@ async fn dns_resolver(mut rx: mpsc::Receiver<Responder>) -> Result<()> {
         Ok(())
 }
 
-async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr, fdpi_methods: (Vec<FdpiItem>, u8)) -> Result<()> {
+async fn tcp_server(tx: mpsc::Sender<Responder>, addr: SocketAddr, fdpi_methods: Vec<FdpiItem>) -> Result<()> {
     // counter
     let num_conns: Arc<AtomicU64> = Default::default();
     let listener = TcpListener::bind(addr).await?;
@@ -262,21 +261,21 @@ fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
         Ok(r)
 }  
 
-async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: (Vec<FdpiItem>, u8)) -> Result<()>{
+async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: Vec<FdpiItem>) -> Result<()>{
     let mut hello_buf = [0; 64];
     let _ = reader.read(&mut hello_buf).await?;
     let mut buf = hello_buf.as_slice();
     log::debug!("[hello] {:?}", &hello_buf);
     let ttl = reader.ttl()?;
     writer.set_nodelay(true)?;
-    for i in fdpi_methods.0 {
+    for i in fdpi_methods {
         match i.c {
             FdpiMethod::Split => {
                 writer.write(&buf[..i.i as usize]).await?;
                 buf = &buf[i.i as usize ..]; 
             },
             FdpiMethod::Disorder => {
-                reader.set_ttl(fdpi_methods.1 as u32)?;
+                reader.set_ttl(2)?;
                 writer.write(&buf[..i.i as usize]).await?;
                 reader.set_ttl(ttl)?;
                 buf = &buf[i.i as usize ..]; 
