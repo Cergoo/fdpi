@@ -20,6 +20,8 @@ for:
 - rutracker.org,
 - index.minfin.com.ua/russian-invading/casualties
 - linkedin.com
+- medium.com
+- meduza.io
 - and other
 ```
 ./fdpi -d2 -d4 -d7 -t(1-4 you need to choose depending on your provider)        
