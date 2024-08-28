@@ -16,8 +16,8 @@ download release bin file
 
 ## run
 for: 
-- youtube.com, 
-- rutracker.org,
+- youtube.com 
+- rutracker.org
 - index.minfin.com.ua/russian-invading/casualties
 - linkedin.com
 - medium.com
