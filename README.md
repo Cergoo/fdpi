@@ -25,8 +25,14 @@ for:
 google-chrome --proxy-server="http://127.0.0.1:8080"
 
 or -s2 -d5 -d8 -t3
+
+for linkedin.com
+./fdpi -d8 -s16 -d24 -s32 -d40 -s48 -t4
+
+twitter.com не поддается ска, авторизация не проходит.
+
+
 ```
-see youtube
 
 ### ok, release, everything works for me.
 

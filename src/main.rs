@@ -262,13 +262,17 @@ fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
         Ok(r)
 }  
 
+
+//const F1: [u8; 2] = [22, 3];
+
 async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: (Vec<FdpiItem>, u8)) -> Result<()>{
     let mut hello_buf = [0; 64];
     let _ = reader.read(&mut hello_buf).await?;
     let mut buf = hello_buf.as_slice();
     log::debug!("[hello] {:?}", &hello_buf);
-    let ttl = reader.ttl()?;
+    let ttl = writer.ttl()?;
     writer.set_nodelay(true)?;
+
     for i in fdpi_methods.0 {
         match i.c {
             FdpiMethod::Split => {
@@ -276,13 +280,14 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
                 buf = &buf[i.i as usize ..]; 
             },
             FdpiMethod::Disorder => {
-                reader.set_ttl(fdpi_methods.1 as u32)?;
+                writer.set_ttl(fdpi_methods.1 as u32)?;
                 writer.write(&buf[..i.i as usize]).await?;
-                reader.set_ttl(ttl)?;
+                writer.set_ttl(ttl)?;
                 buf = &buf[i.i as usize ..]; 
             },
         };
     } 
+    
     writer.write(buf).await?;
     writer.set_nodelay(false)?;
 
