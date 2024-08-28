@@ -6,7 +6,7 @@ fuck dpi, http proxy:
 
 ## install
 ```
-git cone https://github.com/Cergoo/fdpi.git
+git clone https://github.com/Cergoo/fdpi.git
 cargo build --release
 
 or
@@ -19,6 +19,7 @@ for:
 - youtube.com, 
 - rutracker.org,
 - index.minfin.com.ua/russian-invading/casualties
+- linkedin.com
 - and other
 ```
 ./fdpi -d2 -d4 -d7 -t(1-4 you need to choose depending on your provider)        
