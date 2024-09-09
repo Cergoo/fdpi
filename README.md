@@ -29,6 +29,3 @@ google-chrome --proxy-server="http://127.0.0.1:8080"
 ```
 
 ### ok, new release 0.2.0.
-
-
-<img src="img1.jpg" width="500">
