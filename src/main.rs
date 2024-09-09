@@ -256,7 +256,8 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
     }
     
     if let Some((l, sni)) = take_sni(&hello_buf) {
-        let mut point = hello_buf.len()-buf.len()+l-sni.len() as usize;
+        let mut point = l-sni.len()-(hello_buf.len()-buf.len()) as usize;
+        log::info!("[sni] {:?}", String::from_utf8_lossy(&buf[point..point+sni.len() as usize]));
         for i in fdpi_methods.1 {
             if flag { writer.set_ttl(fdpi_methods.2 as u32)?; } else { writer.set_ttl(ttl); }
             flag = !flag;
@@ -272,7 +273,6 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
 
     Ok(())
 }
-
 
 
 /*
