@@ -25,6 +25,7 @@ for:
 - and other
 ```
 ./fdpi -b2 -s2 -s4 -s2 -t4
+google-chrome --proxy-server="http://127.0.0.1:8080"
 ```
 
 ### ok, new release 0.2.0.
