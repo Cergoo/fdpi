@@ -8,10 +8,6 @@ fuck dpi, http proxy:
 ```
 git clone https://github.com/Cergoo/fdpi.git
 cargo build --release
-
-or
-
-download release bin file 
 ```
 
 ## run
