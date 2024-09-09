@@ -1,6 +1,6 @@
 # fdpi
 fuck dpi, http proxy:
-- split and -disorder methods
+- effective fuck dpi
 - caching (1000 entries) DNS resolver enabled: DoH Cloudflare
 - log support
 
@@ -24,16 +24,10 @@ for:
 - meduza.io
 - and other
 ```
-./fdpi -d2 -d4 -d7 -t(1-4 you need to choose depending on your provider)        
-google-chrome --proxy-server="http://127.0.0.1:8080"
-
-or -s2 -d5 -d8 -t3
-
-for linkedin.com
-./fdpi -d8 -s16 -d24 -s32 -d40 -s48 -t4
+./fdpi -b2 -s2 -s4 -s2 -t4
 ```
 
-### ok, release, everything works for me.
+### ok, new release 0.2.0.
 
 
 <img src="img1.jpg" width="500">

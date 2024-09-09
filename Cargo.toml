@@ -1,6 +1,6 @@
 [package]
 name = "fdpi"
-version = "0.1.2"
+version = "0.2.0"
 edition = "2021"
 description = "fuck dpi http proxy"
 
@@ -14,5 +14,6 @@ rustls = "=0.23.12"
 log = { version = "*", features = ["max_level_trace", "release_max_level_trace"] }
 clap = { version = "4.5.16", features = ["derive", "cargo"] }
 pretty_env_logger = "0.5.0"
-
+ascii ="1.1"
+take_sni = "0.1"
 
