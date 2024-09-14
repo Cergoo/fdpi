@@ -24,8 +24,8 @@ use tokio::{
     sync::{mpsc, oneshot},
 };
 use webpki_roots;
-use take_sni::take_sni;
-
+use take_sni::take_sni_point;
+use parcelona::parser_combinators::split_at_revers;
 //mod util;
 
 #[derive(Parser, Debug)]
@@ -47,6 +47,9 @@ struct Cli {
     /// [example: -s2 -s4] range 1..128
     #[arg(short, long, value_parser = clap::value_parser!(u8).range(1..128))]
     sni: Vec<u8>,
+    // edit sni
+    #[arg(short, long, default_value_t = false)]
+    esni: bool,
     /// ttl for disorder range 1..64
     #[arg(short, long, default_value_t = 2, value_parser = clap::value_parser!(u8).range(1..))]
     ttl: u8,
@@ -243,30 +246,46 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
     let _ = reader.read(&mut hello_buf).await?;
     let ttl = writer.ttl()?;       
     writer.set_nodelay(true)?;
-   
-    let mut buf = hello_buf.as_slice();
+    let mut parts:Vec<&[u8]> = Vec::new();
+    
     log::debug!("[hello] {:?}", &hello_buf);
 
-    let mut flag = true;
+    let mut p1_:usize = 0;
+    let mut enable_sni = false; 
+    if let Some((p1, p2)) = take_sni_point(&hello_buf) {
+        p1_ = p1;
+        hello_buf[p1]-=32;
+        hello_buf[p2-1]-=32+2;
+        hello_buf[p1+4]-=32+2;
+        hello_buf[p1+6]-=32+2;
+        
+        log::info!("[sni] {:?}", String::from_utf8_lossy(&hello_buf[p1..p2]));
+        enable_sni = true;
+    }          
+
+    let mut buf = &hello_buf[..];
+    let mut part: &[u8];
     for i in fdpi_methods.0 {
-        if flag { writer.set_ttl(fdpi_methods.2 as u32)?; } else { writer.set_ttl(ttl); }
-        flag = !flag;
-        writer.write(&buf[..i as usize ]).await?;
-        buf = &buf[i as usize..];
+        (buf,part) = split_at_revers(buf,i as usize);
+        parts.push(part);
     }
-    
-    if let Some((l, sni)) = take_sni(&hello_buf) {
-        let mut point = l-sni.len()-(hello_buf.len()-buf.len()) as usize;
-        log::info!("[sni] {:?}", String::from_utf8_lossy(&buf[point..point+sni.len() as usize]));
+     
+    if enable_sni {
+        (buf,part) =  split_at_revers(buf, buf.len()-(hello_buf.len()-p1_));
+        parts.push(part);
         for i in fdpi_methods.1 {
-            if flag { writer.set_ttl(fdpi_methods.2 as u32)?; } else { writer.set_ttl(ttl); }
-            flag = !flag;
-            writer.write(&buf[..point+i as usize]).await?;
-            buf = &buf[point+i as usize..];
-            point = 0; 
+            (buf,part) = split_at_revers(buf,i as usize);
+            parts.push(part);
         }
     }
-                           
+
+    let mut flag = true;
+    for i in parts {
+        if flag { writer.set_ttl(fdpi_methods.2 as u32)?; } else { writer.set_ttl(ttl); }
+        flag = !flag;
+        writer.write(i).await?;
+    }
+                
     writer.write(buf).await?;
     writer.set_nodelay(false)?;
     writer.set_ttl(ttl); 
@@ -275,12 +294,3 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
 }
 
 
-/*
-fn multi_split<T>(idx: &[u64], v: &[T]) -> Vec<&[T]> {
-    let v = Vec::with_capacity(idx.len()+1);
-    for i in idx {
-        v.push(v[])
-    }
-}
-
-*/
