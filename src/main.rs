@@ -47,7 +47,7 @@ struct Cli {
     /// [example: -s2 -s4] range 1..128
     #[arg(short, long, value_parser = clap::value_parser!(u8).range(1..128))]
     sni: Vec<u8>,
-    // edit sni
+    /// edit sni
     #[arg(short, long, default_value_t = false)]
     esni: bool,
     /// ttl for disorder range 1..64
@@ -125,7 +125,7 @@ async fn dns_resolver(mut rx: mpsc::Receiver<Responder>) -> Result<()> {
 async fn tcp_server(
     tx: mpsc::Sender<Responder>,
     addr: SocketAddr,
-    fdpi_methods: (Vec<u8>, Vec<u8>, u8),
+    fdpi_methods: (Vec<u8>, Vec<u8>, u8, bool),
 ) -> Result<()> {
     // counter
     let num_conns: Arc<AtomicU64> = Default::default();
@@ -159,7 +159,7 @@ fn main() {
     pretty_env_logger::init();
     println!("{:} --help", clap::crate_name!());
 
-    let fdm = (cli.body, cli.sni, cli.ttl);
+    let fdm = (cli.body, cli.sni, cli.ttl, cli.esni);
     log::trace!("read fdm: {:#?}", fdm);
 
     let rt = tokio::runtime::Runtime::new().unwrap();
@@ -181,7 +181,7 @@ fn main() {
 async fn process(
     mut socket: &mut TcpStream,
     tx: mpsc::Sender<Responder>,
-    fdpi_methods: (Vec<u8>, Vec<u8>, u8),
+    fdpi_methods: (Vec<u8>, Vec<u8>, u8, bool),
 ) -> Result<()> {
     let mut buffer = BytesMut::with_capacity(1024);
     let n = socket.read_buf(&mut buffer).await?;
@@ -241,7 +241,7 @@ fn parse_http_head(input: &[u8]) -> Result<HttpHead> {
 }
 
 
-async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: (Vec<u8>, Vec<u8>, u8)) -> Result<()> {
+async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi_methods: (Vec<u8>, Vec<u8>, u8, bool)) -> Result<()> {
     let mut hello_buf = [0; 516];
     let _ = reader.read(&mut hello_buf).await?;
     let ttl = writer.ttl()?;       
@@ -254,10 +254,11 @@ async fn split_hello_phrase(reader: &mut TcpStream, writer: &mut TcpStream, fdpi
     let mut enable_sni = false; 
     if let Some((p1, p2)) = take_sni_point(&hello_buf) {
         p1_ = p1;
-        hello_buf[p1]-=32;
-        hello_buf[p2-1]-=32+2;
-        hello_buf[p1+4]-=32+2;
-        hello_buf[p1+6]-=32+2;
+        if fdpi_methods.3 {
+            hello_buf[p1]-=32;
+            hello_buf[p2-1]-=32;
+            hello_buf[p1+4]-=32+2;
+        }
         
         log::info!("[sni] {:?}", String::from_utf8_lossy(&hello_buf[p1..p2]));
         enable_sni = true;
